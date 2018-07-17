@@ -32,34 +32,38 @@ def sinusoidal_encode(x, w):
 
 
 class SinusoidalEncoding(nn.Embedding):
-
-    def __init__(self, num_embeddings, embedding_dim,
+    def __init__(self, num_embeddings, embedding_dim, padding_idx=0,
                  *args, **kwargs):
         super(SinusoidalEncoding, self).__init__(num_embeddings, embedding_dim,
-                                                 padding_idx=0,
-                                                 *args, **kwargs)
+                                                 padding_idx, *args, **kwargs)
         self.weight.data = position_encoding_init(num_embeddings, embedding_dim,
                                                   position_rate=1.0,
                                                   sinusoidal=False)
 
     def forward(self, x, w=1.0):
         isscaler = np.isscalar(w)
-        assert self.padding_idx is not None
+        padding_idx = self.padding_idx
+        if padding_idx is None:
+            padding_idx = -1
 
         if isscaler or w.size(0) == 1:
             weight = sinusoidal_encode(self.weight, w)
-            return F.embedding(
-                x, weight, self.padding_idx, self.max_norm,
-                self.norm_type, self.scale_grad_by_freq, self.sparse)
+            return self._backend.Embedding.apply(
+                x, weight,
+                padding_idx, self.max_norm, self.norm_type,
+                self.scale_grad_by_freq, self.sparse
+            )
         else:
             # TODO: cannot simply apply for batch
             # better to implement efficient function
             pe = []
             for batch_idx, we in enumerate(w):
                 weight = sinusoidal_encode(self.weight, we)
-                pe.append(F.embedding(
-                    x[batch_idx], weight, self.padding_idx, self.max_norm,
-                    self.norm_type, self.scale_grad_by_freq, self.sparse))
+                pe.append(self._backend.Embedding.apply(
+                    x[batch_idx], weight,
+                    padding_idx, self.max_norm, self.norm_type,
+                    self.scale_grad_by_freq, self.sparse
+                ))
             pe = torch.stack(pe)
             return pe
 

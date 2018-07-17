@@ -3,6 +3,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.autograd import Variable
 import math
 import numpy as np
 
@@ -71,7 +72,7 @@ class Encoder(nn.Module):
         assert self.n_speakers == 1 or speaker_embed is not None
 
         # embed text_sequences
-        x = self.embed_tokens(text_sequences.long())
+        x = self.embed_tokens(text_sequences)
         x = F.dropout(x, p=self.dropout, training=self.training)
 
         # expand speaker embedding for all time steps
@@ -206,9 +207,9 @@ class Decoder(nn.Module):
 
         # Position encodings for query (decoder states) and keys (encoder states)
         self.embed_query_positions = SinusoidalEncoding(
-            max_positions, convolutions[0][0])
+            max_positions, convolutions[0][0], padding_idx)
         self.embed_keys_positions = SinusoidalEncoding(
-            max_positions, embed_dim)
+            max_positions, embed_dim, padding_idx)
         # Used for compute multiplier for positional encodings
         if n_speakers > 1:
             self.speaker_proj1 = Linear(speaker_embed_dim, 1, dropout=dropout)
@@ -392,11 +393,12 @@ class Decoder(nn.Module):
         num_attention_layers = sum([layer is not None for layer in self.attention])
         t = 0
         if initial_input is None:
-            initial_input = keys.data.new(B, 1, self.in_dim * self.r).zero_()
+            initial_input = Variable(
+                keys.data.new(B, 1, self.in_dim * self.r).zero_())
         current_input = initial_input
         while True:
             # frame pos start with 1.
-            frame_pos = keys.data.new(B, 1).fill_(t + 1).long()
+            frame_pos = Variable(keys.data.new(B, 1).fill_(t + 1)).long()
             w = self.query_position_rate
             if self.speaker_proj2 is not None:
                 w = w * F.sigmoid(self.speaker_proj2(speaker_embed)).view(-1)
@@ -485,17 +487,8 @@ class Decoder(nn.Module):
         return outputs, alignments, dones, decoder_states
 
     def start_fresh_sequence(self):
-        _clear_modules(self.preattention)
-        _clear_modules(self.convolutions)
-        self.last_conv.clear_buffer()
-
-
-def _clear_modules(modules):
-    for m in modules:
-        try:
-            m.clear_buffer()
-        except AttributeError as e:
-            pass
+        for conv in self.convolutions:
+            conv.clear_buffer()
 
 
 class Converter(nn.Module):

@@ -7,6 +7,7 @@ from os.path import dirname, join, exists
 from deepvoice3_pytorch.frontend.en import text_to_sequence, n_vocab
 
 import torch
+from torch.autograd import Variable
 from torch import nn
 import numpy as np
 
@@ -17,7 +18,6 @@ from deepvoice3_pytorch import MultiSpeakerTTSModel, AttentionSeq2Seq
 
 
 use_cuda = torch.cuda.is_available() and False
-torch.backends.cudnn.deterministic = True
 num_mels = 80
 num_freq = 513
 outputs_per_step = 4
@@ -59,8 +59,8 @@ def _test_data():
     seqs = np.array([_pad(s, max_len) for s in seqs])
 
     # Test encoder
-    x = torch.LongTensor(seqs)
-    y = torch.rand(x.size(0), 12, 80)
+    x = Variable(torch.LongTensor(seqs))
+    y = Variable(torch.rand(x.size(0), 12, 80))
 
     return x, y
 
@@ -131,10 +131,10 @@ def test_multi_speaker_deepvoice3():
     seqs = np.array([_pad(s, max_len) for s in seqs])
 
     # Test encoder
-    x = torch.LongTensor(seqs)
-    y = torch.rand(x.size(0), 4 * 33, 80)
+    x = Variable(torch.LongTensor(seqs))
+    y = Variable(torch.rand(x.size(0), 4 * 33, 80))
     model = _get_model(n_speakers=32, speaker_embed_dim=16)
-    speaker_ids = torch.LongTensor([1, 2, 3])
+    speaker_ids = Variable(torch.LongTensor([1, 2, 3]))
 
     mel_outputs, linear_outputs, alignments, done = model(x, y, speaker_ids=speaker_ids)
     print("Input text:", x.size())
@@ -145,45 +145,13 @@ def test_multi_speaker_deepvoice3():
     print("Done:", done.size())
 
 
-@attr("issue38")
-def test_incremental_path_multiple_times():
-    texts = ["they discarded this for a more completely Roman and far less beautiful letter."]
-    seqs = np.array([text_to_sequence(t) for t in texts])
-    text_positions = np.arange(1, len(seqs[0]) + 1).reshape(1, len(seqs[0]))
-
-    r = 4
-    mel_dim = 80
-    sequence = torch.LongTensor(seqs)
-    text_positions = torch.LongTensor(text_positions)
-
-    for model, speaker_ids in [
-            (_get_model(force_monotonic_attention=False), None),
-            (_get_model(force_monotonic_attention=False, n_speakers=32, speaker_embed_dim=16), torch.LongTensor([1]))]:
-        model.eval()
-
-        # first call
-        mel_outputs, linear_outputs, alignments, done = model(
-            sequence, text_positions=text_positions, speaker_ids=speaker_ids)
-
-        # second call
-        mel_outputs2, linear_outputs2, alignments2, done2 = model(
-            sequence, text_positions=text_positions, speaker_ids=speaker_ids)
-
-        # Should get same result
-        c = (mel_outputs - mel_outputs2).abs()
-        print(c.mean(), c.max())
-
-        assert np.allclose(mel_outputs.cpu().data.numpy(),
-                           mel_outputs2.cpu().data.numpy(), atol=1e-5)
-
-
+@attr("local_only")
 def test_incremental_correctness():
     texts = ["they discarded this for a more completely Roman and far less beautiful letter."]
     seqs = np.array([text_to_sequence(t) for t in texts])
     text_positions = np.arange(1, len(seqs[0]) + 1).reshape(1, len(seqs[0]))
 
-    mel_path = join(dirname(__file__), "data", "ljspeech-mel-00001.npy")
-    mel = np.load(mel_path)
+    mel = np.load("/home/ryuichi/Dropbox/sp/deepvoice3_pytorch/data/ljspeech/ljspeech-mel-00035.npy")
     max_target_len = mel.shape[0]
     r = 4
     mel_dim = 80
@@ -191,17 +159,17 @@ def test_incremental_correctness():
         max_target_len += r - max_target_len % r
         assert max_target_len % r == 0
     mel = _pad_2d(mel, max_target_len)
-    mel = torch.from_numpy(mel)
+    mel = Variable(torch.from_numpy(mel))
     mel_reshaped = mel.view(1, -1, mel_dim * r)
     frame_positions = np.arange(1, mel_reshaped.size(1) + 1).reshape(1, mel_reshaped.size(1))
 
-    x = torch.LongTensor(seqs)
-    text_positions = torch.LongTensor(text_positions)
-    frame_positions = torch.LongTensor(frame_positions)
+    x = Variable(torch.LongTensor(seqs))
+    text_positions = Variable(torch.LongTensor(text_positions))
+    frame_positions = Variable(torch.LongTensor(frame_positions))
 
     for model, speaker_ids in [
             (_get_model(force_monotonic_attention=False), None),
-            (_get_model(force_monotonic_attention=False, n_speakers=32, speaker_embed_dim=16), torch.LongTensor([1]))]:
+            (_get_model(force_monotonic_attention=False, n_speakers=32, speaker_embed_dim=16), Variable(torch.LongTensor([1])))]:
         model.eval()
 
         if speaker_ids is not None:
@@ -254,7 +222,7 @@ def test_incremental_forward():
         max_input_len = np.max(input_lengths) + 10  # manuall padding
         seqs = np.array([_pad(x, max_input_len) for x in seqs], dtype=np.int)
         input_lengths = torch.LongTensor(input_lengths)
-        input_lengths = input_lengths.cuda() if use_cuda else input_lengths
+        input_lengths = input_lengths.cuda() if use_cuda else input_lenghts
     else:
         input_lengths = None
 
@@ -268,14 +236,14 @@ def test_incremental_forward():
         max_target_len += r - max_target_len % r
         assert max_target_len % r == 0
     mel = _pad_2d(mel, max_target_len)
-    mel = torch.from_numpy(mel)
+    mel = Variable(torch.from_numpy(mel))
     mel_reshaped = mel.view(1, -1, mel_dim * r)
 
     frame_positions = np.arange(1, mel_reshaped.size(1) + 1).reshape(1, mel_reshaped.size(1))
 
-    x = torch.LongTensor(seqs)
-    text_positions = torch.LongTensor(text_positions)
-    frame_positions = torch.LongTensor(frame_positions)
+    x = Variable(torch.LongTensor(seqs))
+    text_positions = Variable(torch.LongTensor(text_positions))
+    frame_positions = Variable(torch.LongTensor(frame_positions))
 
     if use_cuda:
         x = x.cuda()
@@ -289,8 +257,7 @@ def test_incremental_forward():
         from matplotlib import pylab as plt
         plt.figure(figsize=(16, 10))
         plt.subplot(3, 1, 1)
-        plt.imshow(mel.data.cpu().numpy().T, origin="lower bottom",
-                   aspect="auto", cmap="magma")
+        plt.imshow(mel.data.cpu().numpy().T, origin="lower bottom", aspect="auto", cmap="magma")
         plt.colorbar()
 
         plt.subplot(3, 1, 2)
