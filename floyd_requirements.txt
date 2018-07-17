@@ -1,0 +1,12 @@
+numpy
+scipy
+unidecode
+inflect
+librosa
+numba
+docopt
+tqdm
+tensorboardX
+nltk
+nose
+torch==0.3.1
